@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+//#include <mpi.h>
 
 /*---------------------------------------------------------------------*/
 #pragma pack(1)
 
 /*---------------------------------------------------------------------*/
-struct cabecalho {
+struct cabecalho
+{
 	unsigned short tipo;
 	unsigned int tamanho_arquivo;
 	unsigned short reservado1;
@@ -22,10 +24,11 @@ struct cabecalho {
 	int altura_resolucao;
 	unsigned int numero_cores;
 	unsigned int cores_importantes;
-}; 
+};
 typedef struct cabecalho CABECALHO;
 
-struct rgb{
+struct rgb
+{
 	unsigned char blue;
 	unsigned char green;
 	unsigned char red;
@@ -33,35 +36,39 @@ struct rgb{
 typedef struct rgb RGB;
 
 /*---------------------------------------------------------------------*/
-int main(int argc, char **argv ){
-
-	char entrada[100], saida[100];
-	CABECALHO cabecalho;
-	RGB pixel;
+int main(int argc, char **argv)
+{
 	int i, j;
-	short media;
-	char aux;
-	
-	printf("Digite o nome do arquivo de entrada:\n");
-	scanf("%s", entrada);
+	int id, np, nmascara;
+	char *imagem_entrada, *imagem_saida;
+	CABECALHO cabecalho;
+	// MPI_Status s;
 
-	printf("Digite o nome do arquivo de saida:\n");
-	scanf("%s", saida);
+	// MPI_Init(&argc, &argv);
+	// MPI_Comm_size(MPI_COMM_WORLD, &np);
+	// MPI_Comm_rank(MPI_COMM_WORLD, &id);
 
+	if (argc != 4)
+	{
+		if (id == 0)
+			printf("%s <tamanho_mascara> <imagem_entrada> <imagem_saida>\n", argv[0]);
+		// MPI_Finalize();
 
-	FILE *fin = fopen(entrada, "rb");
-
-	if ( fin == NULL ){
-		printf("Erro ao abrir o arquivo %s\n", entrada);
 		exit(0);
-	}  
+	}
 
-	FILE *fout = fopen(saida, "wb");
+	nmascara = atoi(argv[1]);
 
-	if ( fout == NULL ){
-		printf("Erro ao abrir o arquivo %s\n", saida);
+	imagem_entrada = argv[2];
+	imagem_saida = argv[3];
+
+	FILE *fin = fopen(imagem_entrada, "rb");
+
+	if (fin == NULL)
+	{
+		printf("Erro ao abrir o arquivo %s\n", imagem_entrada);
 		exit(0);
-	}  
+	}
 
 	fread(&cabecalho, sizeof(CABECALHO), 1, fin);
 
@@ -70,34 +77,23 @@ int main(int argc, char **argv ){
 	printf("Largura: %d\n", cabecalho.altura);
 	printf("Bits por pixel: %d\n", cabecalho.bits_por_pixel);
 
-	fwrite(&cabecalho, sizeof(CABECALHO), 1, fout);
+	RGB *pixels = malloc(cabecalho.altura * cabecalho.largura * sizeof(RGB));
+	RGB pixel;
 
-	for(i=0; i<cabecalho.altura; i++){
-
-		int ali = (cabecalho.largura * 3) % 4;
-
-		if (ali != 0){
-			ali = 4 - ali;
-		}
-
-		for(j=0; j<cabecalho.largura; j++){
-			fread(&pixel, sizeof(RGB), 1, fin);
-			media = (pixel.red + pixel.green + pixel.blue) / 3;
-			pixel.red = media;
-			pixel.green = media;
-			pixel.blue = media;
-			fwrite(&pixel, sizeof(RGB), 1, fout);
-		}
-
-		for(j=0; j<ali; j++){
-			fread(&aux, sizeof(unsigned char), 1, fin);
-			fwrite(&aux, sizeof(unsigned char), 1, fout);
+	for (i = 0; i < cabecalho.altura; i++)
+	{
+		for (j = 0; j < cabecalho.largura; j++)
+		{
+			fread(
+				&pixels[(i * cabecalho.largura) + j],
+				sizeof(RGB),
+				1,
+				fin);
 		}
 	}
 
 	fclose(fin);
-	fclose(fout);
+	// fclose(fout);
+	// MPI_Finalize();
 }
 /*---------------------------------------------------------------------*/
-
-
