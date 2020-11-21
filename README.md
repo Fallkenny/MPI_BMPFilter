@@ -43,19 +43,3 @@ mpirun -np <n_processos> ./MPI_BMPFilter <tamanho_mascara> <imagem_entrada> <ima
 | 3 | 7 | 1.162	| 2.807228916	| 0.9357429719 |
 | 4 | 7 | 0.941	| 3.466524973	| 0.8666312434 |
 
-
-
-
-	
-		     0,73
-		0,5703125
-		    0,5475
-
-
-
-
-
-
-
-
-
