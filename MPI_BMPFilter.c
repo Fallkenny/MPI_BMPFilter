@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-//#include <mpi.h>
+#include <mpi.h>
 
 /*---------------------------------------------------------------------*/
 #pragma pack(1)
@@ -35,39 +35,42 @@ struct rgb
 };
 typedef struct rgb RGB;
 
-
-unsigned char calculaMediana(unsigned char* v, int tam)
+unsigned char calculaMediana(unsigned char *v, int tam)
 {
-	int i,j;
+	int i, j;
 	unsigned char aux, mediana;
 
-	 for(i=0;i<tam-1;i++){
-        for(j=i+1;j<tam;j++){
-        	
-            if(v[i] > v[j]){
-            	
-                aux = v[i];
-                v[i] = v[j];
-                v[j] = aux;
-            }
-        }
-    }
+	for (i = 0; i < tam - 1; i++)
+	{
+		for (j = i + 1; j < tam; j++)
+		{
 
-    if(tam%2){
-         mediana = v[tam/2];
-    } else {
-         mediana = (v[tam/2-1]+v[tam/2])/2;
-    }
+			if (v[i] > v[j])
+			{
+
+				aux = v[i];
+				v[i] = v[j];
+				v[j] = aux;
+			}
+		}
+	}
+
+	if (tam % 2)
+	{
+		mediana = v[tam / 2];
+	}
+	else
+	{
+		mediana = (v[tam / 2 - 1] + v[tam / 2]) / 2;
+	}
 	return mediana;
 }
 
-void filtraPixel(int N, int x, int y, CABECALHO *cabecalho, RGB *imgOriginal, RGB *imgFiltrada)
+void filtraPixel(int N, int x, int y, CABECALHO *cabecalho, char *imgOriginal, char *imgFiltrada)
 {
 	int volta = (N - 1) / 2;
 	int size = N * N;
-	unsigned char R[size];
-	unsigned char G[size];
-	unsigned char B[size];
+	unsigned char color[size];
 	int i, j;
 
 	int id = 0;
@@ -77,19 +80,14 @@ void filtraPixel(int N, int x, int y, CABECALHO *cabecalho, RGB *imgOriginal, RG
 		{
 			if (i > -1 && j > -1 && i < cabecalho->altura && j < cabecalho->largura)
 			{
-				R[id] = imgOriginal[(i * cabecalho->largura) + j].red;
-				G[id] = imgOriginal[(i * cabecalho->largura) + j].green;
-				B[id] = imgOriginal[(i * cabecalho->largura) + j].blue;
+				color[id] = imgOriginal[(i * cabecalho->largura) + j];
 				id++;
 			}
 		}
 	}
-	RGB newPixel;
-	newPixel.red = calculaMediana(R,id);
-	newPixel.green = calculaMediana(G,id);
-	newPixel.blue = calculaMediana(B,id);
 
-	imgFiltrada[(x * cabecalho->largura) + y] = newPixel;
+	imgFiltrada[(x * cabecalho->largura) + y] = calculaMediana(color, id);
+	;
 }
 
 /*---------------------------------------------------------------------*/
@@ -100,18 +98,17 @@ int main(int argc, char **argv)
 	short media;
 	char *imagem_entrada, *imagem_saida;
 	CABECALHO cabecalho;
-	// MPI_Status s;
 
-	// MPI_Init(&argc, &argv);
-	// MPI_Comm_size(MPI_COMM_WORLD, &np);
-	// MPI_Comm_rank(MPI_COMM_WORLD, &id);
+	MPI_Init(&argc, &argv);
+	MPI_Comm_size(MPI_COMM_WORLD, &np);
+	MPI_Comm_rank(MPI_COMM_WORLD, &id);
 
 	if (argc != 4)
 	{
 		if (id == 0)
 			printf("%s <tamanho_mascara> <imagem_entrada> <imagem_saida>\n", argv[0]);
-		// MPI_Finalize();
 
+		MPI_Finalize();
 		exit(0);
 	}
 
@@ -120,9 +117,15 @@ int main(int argc, char **argv)
 	imagem_entrada = argv[2];
 	imagem_saida = argv[3];
 
-	FILE *fin = fopen(imagem_entrada, "rb");
-	FILE *fout = fopen(imagem_saida, "wb");
+	char *pixelsR, *filteredPixelsR, *pixelsAuxR, *filteredPixelsAuxR;
+	char *pixelsG, *filteredPixelsG, *pixelsAuxG, *filteredPixelsAuxG;
+	char *pixelsB, *filteredPixelsB, *pixelsAuxB, *filteredPixelsAuxB;
 
+	RGB pixel;
+	FILE *fin, *fout;
+
+	fin = fopen(imagem_entrada, "rb");
+	fout = fopen(imagem_saida, "wb");
 
 	if (fin == NULL)
 	{
@@ -130,63 +133,139 @@ int main(int argc, char **argv)
 		exit(0);
 	}
 
-	if ( fout == NULL ){
+	if (fout == NULL)
+	{
 		printf("Erro ao abrir o arquivo %s\n", imagem_saida);
 		exit(0);
-	}  
+	}
 
 	fread(&cabecalho, sizeof(CABECALHO), 1, fin);
 
 	printf("Tamanho da imagem: %u\n", cabecalho.tamanho_arquivo);
 	printf("Largura: %d\n", cabecalho.largura);
-	printf("Largura: %d\n", cabecalho.altura);
+	printf("Altura: %d\n", cabecalho.altura);
 	printf("Bits por pixel: %d\n", cabecalho.bits_por_pixel);
 
-	RGB *pixels = malloc(cabecalho.altura * cabecalho.largura * sizeof(RGB));
-	RGB *filteredPixels = malloc(cabecalho.altura * cabecalho.largura * sizeof(RGB));
-	RGB pixel;
+	pixelsAuxR = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
+	pixelsAuxG = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
+	pixelsAuxB = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
+	filteredPixelsAuxR = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
+	filteredPixelsAuxG = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
+	filteredPixelsAuxB = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
 
-	for (i = 0; i < cabecalho.altura; i++)
+	if (id == 0)
 	{
-		for (j = 0; j < cabecalho.largura; j++)
+		pixelsR = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
+		pixelsG = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
+		pixelsB = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
+		filteredPixelsR = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
+		filteredPixelsG = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
+		filteredPixelsB = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
+
+		for (i = 0; i < cabecalho.altura; i++)
 		{
-			fread(
-				&pixel,
-				sizeof(RGB),
-				1,
-				fin);
-			// media = (pixel.red + pixel.green + pixel.blue) / 3;
-			// pixel.red = media;
-			// pixel.green = media;
-			// pixel.blue = media;
-			pixels[(i * cabecalho.largura) + j] = pixel;
+			for (j = 0; j < cabecalho.largura; j++)
+			{
+				fread(
+					&pixel,
+					sizeof(RGB),
+					1,
+					fin);
+
+				pixelsR[(i * cabecalho.largura) + j] = pixel.red;
+				pixelsG[(i * cabecalho.largura) + j] = pixel.green;
+				pixelsB[(i * cabecalho.largura) + j] = pixel.blue;
+			}
 		}
 	}
 
-	for (i = 0; i < cabecalho.altura; i++)
+	MPI_Scatter(
+		pixelsR,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		pixelsAuxR,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		0,
+		MPI_COMM_WORLD);
+	MPI_Scatter(
+		pixelsG,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		pixelsAuxG,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		0,
+		MPI_COMM_WORLD);
+	MPI_Scatter(
+		pixelsB,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		pixelsAuxB,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		0,
+		MPI_COMM_WORLD);
+
+	for (i = 0; i < cabecalho.altura / np; i++)
 	{
 		for (j = 0; j < cabecalho.largura; j++)
 		{
-			filtraPixel(nmascara, i, j, &cabecalho, pixels, filteredPixels);
+			filtraPixel(nmascara, i, j, &cabecalho, pixelsAuxR, filteredPixelsAuxR);
+			filtraPixel(nmascara, i, j, &cabecalho, pixelsAuxG, filteredPixelsAuxG);
+			filtraPixel(nmascara, i, j, &cabecalho, pixelsAuxB, filteredPixelsAuxB);
 		}
 	}
 
+	MPI_Gather(
+		filteredPixelsAuxR,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		filteredPixelsR,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		0,
+		MPI_COMM_WORLD);
 
-	fwrite(&cabecalho, sizeof(CABECALHO), 1, fout);
+	MPI_Gather(
+		filteredPixelsAuxG,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		filteredPixelsG,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		0,
+		MPI_COMM_WORLD);
 
-	//Escrever arquivo final
-	for(i=0; i<cabecalho.altura; i++)
+	MPI_Gather(
+		filteredPixelsAuxB,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		filteredPixelsB,
+		cabecalho.altura / np * cabecalho.largura,
+		MPI_CHAR,
+		0,
+		MPI_COMM_WORLD);
+
+	if (id == 0)
 	{
-		for(j=0; j<cabecalho.largura; j++){
-			
-			fwrite(&filteredPixels[(i * cabecalho.largura) + j], sizeof(RGB), 1, fout);
+		fwrite(&cabecalho, sizeof(CABECALHO), 1, fout);
+
+		//Escrever arquivo final
+		for (i = 0; i < cabecalho.altura; i++)
+		{
+			for (j = 0; j < cabecalho.largura; j++)
+			{
+				pixel.red = filteredPixelsR[(i * cabecalho.largura) + j];
+				pixel.green = filteredPixelsG[(i * cabecalho.largura) + j];
+				pixel.blue = filteredPixelsB[(i * cabecalho.largura) + j];
+				fwrite(&pixel, sizeof(RGB), 1, fout);
+			}
 		}
-
-
 	}
 
 	fclose(fin);
-	// fclose(fout);
-	// MPI_Finalize();
+	fclose(fout);
+	MPI_Finalize();
 }
 /*---------------------------------------------------------------------*/
