@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <mpi.h>
+#include <stddef.h>
 
 /*---------------------------------------------------------------------*/
 #pragma pack(1)
@@ -15,7 +16,7 @@ struct cabecalho
 	unsigned int offset;
 	unsigned int tamanho_image_header;
 	int largura;
-	int altura;
+	borboleta int altura;
 	unsigned short planos;
 	unsigned short bits_por_pixel;
 	unsigned int compressao;
@@ -66,11 +67,13 @@ unsigned char calculaMediana(unsigned char *v, int tam)
 	return mediana;
 }
 
-void filtraPixel(int N, int x, int y, CABECALHO *cabecalho, char *imgOriginal, char *imgFiltrada)
+void filtraPixel(int N, int x, int y, CABECALHO *cabecalho, RGB *imgOriginal, RGB *imgFiltrada)
 {
 	int volta = (N - 1) / 2;
 	int size = N * N;
-	unsigned char color[size];
+	unsigned char R[size];
+	unsigned char G[size];
+	unsigned char B[size];
 	int i, j;
 
 	int id = 0;
@@ -80,16 +83,20 @@ void filtraPixel(int N, int x, int y, CABECALHO *cabecalho, char *imgOriginal, c
 		{
 			if (i > -1 && j > -1 && i < cabecalho->altura && j < cabecalho->largura)
 			{
-				color[id] = imgOriginal[(i * cabecalho->largura) + j];
+				R[id] = imgOriginal[(i * cabecalho->largura) + j].red;
+				G[id] = imgOriginal[(i * cabecalho->largura) + j].green;
+				B[id] = imgOriginal[(i * cabecalho->largura) + j].blue;
 				id++;
 			}
 		}
 	}
+	RGB newPixel;
+	newPixel.red = calculaMediana(R, id);
+	newPixel.green = calculaMediana(G, id);
+	newPixel.blue = calculaMediana(B, id);
 
-	imgFiltrada[(x * cabecalho->largura) + y] = calculaMediana(color, id);
-	;
+	imgFiltrada[(x * cabecalho->largura) + y] = newPixel;
 }
-
 /*---------------------------------------------------------------------*/
 int main(int argc, char **argv)
 {
@@ -117,9 +124,7 @@ int main(int argc, char **argv)
 	imagem_entrada = argv[2];
 	imagem_saida = argv[3];
 
-	char *pixelsR, *filteredPixelsR, *pixelsAuxR, *filteredPixelsAuxR;
-	char *pixelsG, *filteredPixelsG, *pixelsAuxG, *filteredPixelsAuxG;
-	char *pixelsB, *filteredPixelsB, *pixelsAuxB, *filteredPixelsAuxB;
+	RGB *pixels, *filteredPixels, *pixelsAux, *filteredPixelsAux;
 
 	RGB pixel;
 	FILE *fin, *fout;
@@ -146,21 +151,26 @@ int main(int argc, char **argv)
 	printf("Altura: %d\n", cabecalho.altura);
 	printf("Bits por pixel: %d\n", cabecalho.bits_por_pixel);
 
-	pixelsAuxR = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
-	pixelsAuxG = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
-	pixelsAuxB = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
-	filteredPixelsAuxR = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
-	filteredPixelsAuxG = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
-	filteredPixelsAuxB = (char *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(char));
+	pixelsAux = (RGB *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(RGB));
+	filteredPixelsAux = (RGB *)malloc((cabecalho.altura / np) * cabecalho.largura * sizeof(RGB));
+
+	const int nitems = 3;
+	int blocklengths[3] = {sizeof(char), sizeof(char), sizeof(char)};
+	MPI_Datatype types[3] = {MPI_CHAR, MPI_CHAR, MPI_CHAR};
+	MPI_Datatype mpi_rgb_type;
+	MPI_Aint offsets[3];
+
+	offsets[0] = offsetof(RGB, red);
+	offsets[1] = offsetof(RGB, green);
+	offsets[2] = offsetof(RGB, blue);
+
+	MPI_Type_create_struct(nitems, blocklengths, offsets, types, &mpi_rgb_type);
+	MPI_Type_commit(&mpi_rgb_type);
 
 	if (id == 0)
 	{
-		pixelsR = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
-		pixelsG = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
-		pixelsB = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
-		filteredPixelsR = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
-		filteredPixelsG = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
-		filteredPixelsB = (char *)malloc(cabecalho.altura * cabecalho.largura * sizeof(char));
+		pixels = (RGB *)malloc(cabecalho.altura * cabecalho.largura * sizeof(RGB));
+		filteredPixels = (RGB *)malloc(cabecalho.altura * cabecalho.largura * sizeof(RGB));
 
 		for (i = 0; i < cabecalho.altura; i++)
 		{
@@ -172,38 +182,18 @@ int main(int argc, char **argv)
 					1,
 					fin);
 
-				pixelsR[(i * cabecalho.largura) + j] = pixel.red;
-				pixelsG[(i * cabecalho.largura) + j] = pixel.green;
-				pixelsB[(i * cabecalho.largura) + j] = pixel.blue;
+				pixels[(i * cabecalho.largura) + j] = pixel;
 			}
 		}
 	}
 
 	MPI_Scatter(
-		pixelsR,
+		pixels,
 		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
-		pixelsAuxR,
+		mpi_rgb_type,
+		pixelsAux,
 		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
-		0,
-		MPI_COMM_WORLD);
-	MPI_Scatter(
-		pixelsG,
-		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
-		pixelsAuxG,
-		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
-		0,
-		MPI_COMM_WORLD);
-	MPI_Scatter(
-		pixelsB,
-		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
-		pixelsAuxB,
-		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
+		mpi_rgb_type,
 		0,
 		MPI_COMM_WORLD);
 
@@ -211,39 +201,17 @@ int main(int argc, char **argv)
 	{
 		for (j = 0; j < cabecalho.largura; j++)
 		{
-			filtraPixel(nmascara, i, j, &cabecalho, pixelsAuxR, filteredPixelsAuxR);
-			filtraPixel(nmascara, i, j, &cabecalho, pixelsAuxG, filteredPixelsAuxG);
-			filtraPixel(nmascara, i, j, &cabecalho, pixelsAuxB, filteredPixelsAuxB);
+			filtraPixel(nmascara, i, j, &cabecalho, pixelsAux, filteredPixelsAux);
 		}
 	}
 
 	MPI_Gather(
-		filteredPixelsAuxR,
+		filteredPixelsAux,
 		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
-		filteredPixelsR,
+		mpi_rgb_type,
+		filteredPixels,
 		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
-		0,
-		MPI_COMM_WORLD);
-
-	MPI_Gather(
-		filteredPixelsAuxG,
-		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
-		filteredPixelsG,
-		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
-		0,
-		MPI_COMM_WORLD);
-
-	MPI_Gather(
-		filteredPixelsAuxB,
-		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
-		filteredPixelsB,
-		cabecalho.altura / np * cabecalho.largura,
-		MPI_CHAR,
+		mpi_rgb_type,
 		0,
 		MPI_COMM_WORLD);
 
@@ -256,9 +224,7 @@ int main(int argc, char **argv)
 		{
 			for (j = 0; j < cabecalho.largura; j++)
 			{
-				pixel.red = filteredPixelsR[(i * cabecalho.largura) + j];
-				pixel.green = filteredPixelsG[(i * cabecalho.largura) + j];
-				pixel.blue = filteredPixelsB[(i * cabecalho.largura) + j];
+				pixel = filteredPixels[(i * cabecalho.largura) + j];
 				fwrite(&pixel, sizeof(RGB), 1, fout);
 			}
 		}
@@ -267,5 +233,6 @@ int main(int argc, char **argv)
 	fclose(fin);
 	fclose(fout);
 	MPI_Finalize();
+	MPI_Type_free(&mpi_rgb_type);
 }
 /*---------------------------------------------------------------------*/
