@@ -232,7 +232,7 @@ int main(int argc, char **argv)
 
 	fclose(fin);
 	fclose(fout);
-	MPI_Finalize();
 	MPI_Type_free(&mpi_rgb_type);
+	MPI_Finalize();
 }
 /*---------------------------------------------------------------------*/
