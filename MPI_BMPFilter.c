@@ -16,7 +16,7 @@ struct cabecalho
 	unsigned int offset;
 	unsigned int tamanho_image_header;
 	int largura;
-	borboleta int altura;
+	int altura;
 	unsigned short planos;
 	unsigned short bits_por_pixel;
 	unsigned int compressao;
